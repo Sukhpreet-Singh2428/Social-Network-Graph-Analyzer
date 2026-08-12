@@ -50,6 +50,31 @@ public class Graph {
         return users.containsKey(userId);
     }
 
+    /**
+     * Removes a user (node) and all of its edges from the graph.
+     *
+     * @return {@code true} if the user existed and was removed;
+     *         {@code false} if no such user.
+     */
+    public boolean removeUser(int userId) {
+        if (!users.containsKey(userId)) {
+            return false;
+        }
+        // Remove this user from every neighbour's adjacency set
+        Set<Integer> friends = adjacencyList.get(userId);
+        if (friends != null) {
+            for (int friendId : friends) {
+                Set<Integer> friendSet = adjacencyList.get(friendId);
+                if (friendSet != null) {
+                    friendSet.remove(userId);
+                }
+            }
+        }
+        adjacencyList.remove(userId);
+        users.remove(userId);
+        return true;
+    }
+
     // ------------------------------------------------------------------ edges
 
     /**
@@ -110,6 +135,6 @@ public class Graph {
         return Collections.unmodifiableMap(adjacencyList);
     }
 
-    // TODO(chunk-3): Graph traversal methods (BFS, DFS) will be added here
-    // TODO(chunk-3): Mutual friends, connected components, shortest path
+    // TODO(chunk-5): Graph traversal methods (BFS, DFS) will be added here
+    // TODO(chunk-5): Mutual friends, connected components, shortest path
 }
