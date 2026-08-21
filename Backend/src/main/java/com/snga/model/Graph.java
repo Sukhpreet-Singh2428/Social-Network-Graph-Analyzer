@@ -4,8 +4,10 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
+import java.util.Queue;
 import java.util.Set;
 
 /**
@@ -147,6 +149,68 @@ public class Graph {
         }
         return edges;
     }
+    
+    /**
+     * Finds the shortest path between two users using Breadth-First Search (BFS).
+     * <p>
+     * Complexity: O(V + E) — standard BFS traverses nodes and edges once. In an
+     * unweighted graph like this, BFS guarantees the shortest path.
+     *
+     * @return a list of user IDs representing the path from source to target,
+     *         or an empty list if no path exists.
+     */
+    public List<Integer> getShortestPath(int source, int target) {
+        if (!userExists(source) || !userExists(target)) {
+            return Collections.emptyList();
+        }
+
+        if (source == target) {
+            return Collections.singletonList(source);
+        }
+
+        Map<Integer, Integer> parentMap = new HashMap<>();
+        Queue<Integer> queue = new LinkedList<>();
+        Set<Integer> visited = new HashSet<>();
+
+        queue.add(source);
+        visited.add(source);
+
+        boolean found = false;
+
+        while (!queue.isEmpty()) {
+            int current = queue.poll();
+
+            if (current == target) {
+                found = true;
+                break;
+            }
+
+            Set<Integer> neighbors = adjacencyList.get(current);
+            if (neighbors != null) {
+                for (int neighbor : neighbors) {
+                    if (!visited.contains(neighbor)) {
+                        visited.add(neighbor);
+                        parentMap.put(neighbor, current);
+                        queue.add(neighbor);
+                    }
+                }
+            }
+        }
+
+        if (!found) {
+            return Collections.emptyList();
+        }
+
+        // Reconstruct path
+        List<Integer> path = new ArrayList<>();
+        Integer curr = target;
+        while (curr != null) {
+            path.add(curr);
+            curr = parentMap.get(curr);
+        }
+        Collections.reverse(path);
+        return path;
+    }
 
     // --------------------------------------------------------------- getters
 
@@ -158,6 +222,5 @@ public class Graph {
         return Collections.unmodifiableMap(adjacencyList);
     }
 
-    // TODO(chunk-5): Graph traversal methods (BFS, DFS) will be added here
-    // TODO(chunk-5): Mutual friends, connected components, shortest path
+    // TODO(chunk-7): DFS, connected components
 }
