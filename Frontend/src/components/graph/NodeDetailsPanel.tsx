@@ -12,7 +12,7 @@ export const NodeDetailsPanel: React.FC<NodeDetailsPanelProps> = ({
   onClose,
   onOpenAddConnectionModal
 }) => {
-  const { selectedNodeId, getUserById, getMutualConnections, connections } = useGraph();
+  const { selectedNodeId, getUserById, getMutualConnections, connections, users } = useGraph();
   const navigate = useNavigate();
 
   if (!selectedNodeId) return null;
@@ -23,7 +23,8 @@ export const NodeDetailsPanel: React.FC<NodeDetailsPanelProps> = ({
     c => c.sourceUserId === user.id || c.targetUserId === user.id
   );
 
-  const mutualsWithAlex = user.id !== 'u1' ? getMutualConnections(user.id, 'u1') : [];
+  const rootUserId = users[0]?.id;
+  const mutualsWithRoot = (user.id !== rootUserId && rootUserId) ? getMutualConnections(user.id, rootUserId) : [];
 
   const handleStartPathFinder = () => {
     navigate(`/path-finder?source=${user.id}`);
@@ -65,7 +66,7 @@ export const NodeDetailsPanel: React.FC<NodeDetailsPanelProps> = ({
 
           <div>
             <h3 className="text-base font-extrabold text-zinc-100">{user.name}</h3>
-            <p className="text-xs text-zinc-400 font-mono">{user.username}</p>
+            <p className="text-xs text-zinc-400 font-mono">ID: #{user.id}</p>
             <p className="text-xs text-zinc-400 mt-0.5">{user.role}</p>
           </div>
 
@@ -123,13 +124,13 @@ export const NodeDetailsPanel: React.FC<NodeDetailsPanelProps> = ({
         </div>
 
         {/* Mutual Connections */}
-        {mutualsWithAlex.length > 0 && (
+        {mutualsWithRoot.length > 0 && (
           <div className="space-y-2 border-t border-white/10 pt-4">
             <span className="text-[10px] font-mono font-bold text-zinc-400 uppercase tracking-widest block">
-              Mutual Connections ({mutualsWithAlex.length})
+              Mutual Connections ({mutualsWithRoot.length})
             </span>
             <div className="flex -space-x-2 overflow-hidden py-1">
-              {mutualsWithAlex.slice(0, 5).map(m => (
+              {mutualsWithRoot.slice(0, 5).map(m => (
                 <img
                   key={m.id}
                   src={m.avatar}
