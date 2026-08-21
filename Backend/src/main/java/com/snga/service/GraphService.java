@@ -1,5 +1,8 @@
 package com.snga.service;
 
+import com.snga.dto.EdgeDto;
+import com.snga.dto.GraphResponse;
+import com.snga.dto.NodeDto;
 import com.snga.exception.ApiException;
 import com.snga.model.Graph;
 import com.snga.model.User;
@@ -7,7 +10,9 @@ import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 
 import java.util.Collection;
+import java.util.List;
 import java.util.Set;
+import java.util.stream.Collectors;
 
 /**
  * Spring-managed singleton wrapping the in-memory {@link Graph}.
@@ -119,6 +124,24 @@ public class GraphService {
                     "User with id " + userId + " not found");
         }
         return graph.getFriends(userId);
+    }
+
+    // ----------------------------------------------------------- full graph
+
+    /**
+     * Returns a snapshot of the entire graph: all nodes and all
+     * deduplicated edges, ready for the frontend visualisation layer.
+     */
+    public GraphResponse getFullGraph() {
+        List<NodeDto> nodes = graph.getUsers().values().stream()
+                .map(u -> new NodeDto(u.getId(), u.getName()))
+                .collect(Collectors.toList());
+
+        List<EdgeDto> edges = graph.getEdges().stream()
+                .map(e -> new EdgeDto(e[0], e[1]))
+                .collect(Collectors.toList());
+
+        return new GraphResponse(nodes, edges);
     }
 
     // TODO(chunk-5): BFS, shortest path — will delegate to Graph traversal methods
