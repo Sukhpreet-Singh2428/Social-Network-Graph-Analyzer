@@ -3,6 +3,7 @@ package com.snga.service;
 import com.snga.dto.EdgeDto;
 import com.snga.dto.GraphResponse;
 import com.snga.dto.NodeDto;
+import com.snga.dto.PathResponse;
 import com.snga.exception.ApiException;
 import com.snga.model.Graph;
 import com.snga.model.User;
@@ -144,6 +145,26 @@ public class GraphService {
         return new GraphResponse(nodes, edges);
     }
 
-    // TODO(chunk-5): BFS, shortest path — will delegate to Graph traversal methods
-    // TODO(chunk-6): mutual friends, connected components
+    // ----------------------------------------------------------- traversal
+
+    /**
+     * Finds the shortest path between two users.
+     *
+     * @throws ApiException 404 if either source or target user does not exist.
+     */
+    public PathResponse getShortestPath(int source, int target) {
+        if (!graph.userExists(source)) {
+            throw new ApiException(HttpStatus.NOT_FOUND, "User with id " + source + " not found");
+        }
+        if (!graph.userExists(target)) {
+            throw new ApiException(HttpStatus.NOT_FOUND, "User with id " + target + " not found");
+        }
+
+        List<Integer> path = graph.getShortestPath(source, target);
+        int distance = path.isEmpty() ? -1 : path.size() - 1;
+        
+        return new PathResponse(source, target, path, distance);
+    }
+
+    // TODO(chunk-7): DFS, connected components
 }

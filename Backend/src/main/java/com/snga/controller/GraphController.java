@@ -1,9 +1,11 @@
 package com.snga.controller;
 
 import com.snga.dto.GraphResponse;
+import com.snga.dto.PathResponse;
 import com.snga.service.GraphService;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
@@ -27,5 +29,14 @@ public class GraphController {
     @GetMapping("/graph")
     public GraphResponse getFullGraph() {
         return graphService.getFullGraph();
+    }
+
+    /**
+     * GET /api/graph/path?source={id}&target={id}
+     * Returns the shortest path between source and target using BFS.
+     */
+    @GetMapping("/graph/path")
+    public PathResponse getShortestPath(@RequestParam int source, @RequestParam int target) {
+        return graphService.getShortestPath(source, target);
     }
 }
