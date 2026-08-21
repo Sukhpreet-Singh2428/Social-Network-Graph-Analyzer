@@ -1,8 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Modal } from '../common/Modal';
 import { useGraph } from '../../context/GraphContext';
-import type { CommunityId } from '../../types';
-import { UserPlus } from 'lucide-react';
+import { UserPlus, Info } from 'lucide-react';
 
 interface AddUserModalProps {
   isOpen: boolean;
@@ -10,37 +9,42 @@ interface AddUserModalProps {
 }
 
 export const AddUserModal: React.FC<AddUserModalProps> = ({ isOpen, onClose }) => {
-  const { addUser, communities } = useGraph();
+  const { users, addUser } = useGraph();
 
-  const [name, setName] = useState('');
-  const [username, setUsername] = useState('');
-  const [email, setEmail] = useState('');
-  const [role, setRole] = useState('');
-  const [communityId, setCommunityId] = useState<CommunityId>('c1');
-  const [location, setLocation] = useState('San Francisco, CA');
+  const [idInput, setIdInput] = useState<string>('');
+  const [name, setName] = useState<string>('');
+  const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  // Auto-suggest next integer ID based on current max numeric ID in state
+  useEffect(() => {
+    if (isOpen) {
+      const maxId = users.reduce((max, u) => {
+        const parsed = parseInt(u.id, 10);
+        return !isNaN(parsed) ? Math.max(max, parsed) : max;
+      }, 0);
+      setIdInput(String(maxId + 1));
+      setName('');
+      setIsSubmitting(false);
+    }
+  }, [isOpen, users]);
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!name.trim() || !username.trim()) return;
+    const numId = parseInt(idInput, 10);
 
-    const comm = communities.find(c => c.id === communityId);
+    if (isNaN(numId) || numId < 1) {
+      return;
+    }
+    if (!name.trim()) return;
 
-    addUser({
-      name,
-      username: username.startsWith('@') ? username : `@${username}`,
-      email: email || `${username.replace('@', '')}@network.io`,
-      role: role || 'Member',
-      communityId,
-      communityName: comm ? comm.name : 'Tech Innovators',
-      avatar: `https://images.unsplash.com/photo-${1500000000000 + Math.floor(Math.random() * 10000000)}?auto=format&fit=crop&q=80&w=250`,
-      location
-    });
+    setIsSubmitting(true);
+    const success = await addUser(numId, name.trim());
+    setIsSubmitting(false);
 
-    setName('');
-    setUsername('');
-    setEmail('');
-    setRole('');
-    onClose();
+    if (success) {
+      setName('');
+      onClose();
+    }
   };
 
   return (
@@ -48,9 +52,30 @@ export const AddUserModal: React.FC<AddUserModalProps> = ({ isOpen, onClose }) =
       isOpen={isOpen}
       onClose={onClose}
       title="Add New User Node"
-      subtitle="Create a new profile entity in the network graph."
+      subtitle="Create a new user node in the Spring Boot backend graph store."
     >
       <form onSubmit={handleSubmit} className="space-y-4">
+        <div>
+          <label className="block text-[10px] font-mono font-bold text-zinc-400 uppercase tracking-widest mb-1">
+            User ID (Integer) *
+          </label>
+          <input
+            type="number"
+            required
+            min={1}
+            step={1}
+            disabled={isSubmitting}
+            placeholder="e.g. 1, 2, 10"
+            value={idInput}
+            onChange={e => setIdInput(e.target.value)}
+            className="w-full px-3.5 py-2.5 bg-zinc-900 border border-white/10 rounded-lg text-xs text-zinc-100 placeholder-zinc-500 focus:outline-none focus:border-zinc-300 font-medium disabled:opacity-50"
+          />
+          <p className="text-[10px] text-zinc-500 mt-1 flex items-center gap-1 font-mono">
+            <Info className="w-3 h-3 text-zinc-400 inline" />
+            Client-supplied integer ID required by backend endpoint POST /api/users.
+          </p>
+        </div>
+
         <div>
           <label className="block text-[10px] font-mono font-bold text-zinc-400 uppercase tracking-widest mb-1">
             Full Name *
@@ -58,69 +83,11 @@ export const AddUserModal: React.FC<AddUserModalProps> = ({ isOpen, onClose }) =
           <input
             type="text"
             required
+            disabled={isSubmitting}
             placeholder="e.g. Jordan Lee"
             value={name}
             onChange={e => setName(e.target.value)}
-            className="w-full px-3.5 py-2.5 bg-zinc-900 border border-white/10 rounded-lg text-xs text-zinc-100 placeholder-zinc-500 focus:outline-none focus:border-zinc-300 font-medium"
-          />
-        </div>
-
-        <div>
-          <label className="block text-[10px] font-mono font-bold text-zinc-400 uppercase tracking-widest mb-1">
-            Username *
-          </label>
-          <input
-            type="text"
-            required
-            placeholder="e.g. @jordan_lee"
-            value={username}
-            onChange={e => setUsername(e.target.value)}
-            className="w-full px-3.5 py-2.5 bg-zinc-900 border border-white/10 rounded-lg text-xs text-zinc-100 placeholder-zinc-500 focus:outline-none focus:border-zinc-300 font-medium"
-          />
-        </div>
-
-        <div className="grid grid-cols-2 gap-3">
-          <div>
-            <label className="block text-[10px] font-mono font-bold text-zinc-400 uppercase tracking-widest mb-1">
-              Role / Title
-            </label>
-            <input
-              type="text"
-              placeholder="e.g. Graph Specialist"
-              value={role}
-              onChange={e => setRole(e.target.value)}
-              className="w-full px-3.5 py-2.5 bg-zinc-900 border border-white/10 rounded-lg text-xs text-zinc-100 placeholder-zinc-500 focus:outline-none focus:border-zinc-300 font-medium"
-            />
-          </div>
-
-          <div>
-            <label className="block text-[10px] font-mono font-bold text-zinc-400 uppercase tracking-widest mb-1">
-              Community Cluster
-            </label>
-            <select
-              value={communityId}
-              onChange={e => setCommunityId(e.target.value as CommunityId)}
-              className="w-full px-3.5 py-2.5 bg-zinc-900 border border-white/10 rounded-lg text-xs text-zinc-100 focus:outline-none focus:border-zinc-300 cursor-pointer font-medium"
-            >
-              {communities.map(c => (
-                <option key={c.id} value={c.id}>
-                  {c.name}
-                </option>
-              ))}
-            </select>
-          </div>
-        </div>
-
-        <div>
-          <label className="block text-[10px] font-mono font-bold text-zinc-400 uppercase tracking-widest mb-1">
-            Location
-          </label>
-          <input
-            type="text"
-            placeholder="e.g. San Francisco, CA"
-            value={location}
-            onChange={e => setLocation(e.target.value)}
-            className="w-full px-3.5 py-2.5 bg-zinc-900 border border-white/10 rounded-lg text-xs text-zinc-100 placeholder-zinc-500 focus:outline-none focus:border-zinc-300 font-medium"
+            className="w-full px-3.5 py-2.5 bg-zinc-900 border border-white/10 rounded-lg text-xs text-zinc-100 placeholder-zinc-500 focus:outline-none focus:border-zinc-300 font-medium disabled:opacity-50"
           />
         </div>
 
@@ -128,16 +95,18 @@ export const AddUserModal: React.FC<AddUserModalProps> = ({ isOpen, onClose }) =
           <button
             type="button"
             onClick={onClose}
-            className="px-4 py-2 text-xs font-semibold text-zinc-400 hover:text-white rounded-lg hover:bg-white/5 transition-colors"
+            disabled={isSubmitting}
+            className="px-4 py-2 text-xs font-semibold text-zinc-400 hover:text-white rounded-lg hover:bg-white/5 transition-colors disabled:opacity-50"
           >
             Cancel
           </button>
           <button
             type="submit"
-            className="flex items-center gap-2 px-5 py-2 text-xs font-bold text-zinc-950 bg-zinc-100 hover:bg-white rounded-lg shadow-sm transition-colors uppercase tracking-wider"
+            disabled={isSubmitting || !name.trim() || !idInput}
+            className="flex items-center gap-2 px-5 py-2 text-xs font-bold text-zinc-950 bg-zinc-100 hover:bg-white rounded-lg shadow-sm transition-colors uppercase tracking-wider disabled:opacity-50"
           >
             <UserPlus className="w-4 h-4" />
-            Add User Node
+            {isSubmitting ? 'Creating...' : 'Add User Node'}
           </button>
         </div>
       </form>

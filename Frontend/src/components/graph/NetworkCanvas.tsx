@@ -1,6 +1,6 @@
 import React, { useRef, useEffect, useState, useCallback } from 'react';
 import { useGraph } from '../../context/GraphContext';
-import { ZoomIn, ZoomOut, RefreshCw, Layers } from 'lucide-react';
+import { ZoomIn, ZoomOut, RefreshCw, Layers, Info } from 'lucide-react';
 
 interface Point {
   x: number;
@@ -35,49 +35,71 @@ export const NetworkCanvas: React.FC = () => {
   const [isPanning, setIsPanning] = useState<boolean>(false);
   const [startPan, setStartPan] = useState<Point>({ x: 0, y: 0 });
 
-  // Node Positions
+  // Node Positions (Persistent across re-renders for node stability)
   const nodePositionsRef = useRef<Map<string, NodePosition>>(new Map());
   const [draggingNodeId, setDraggingNodeId] = useState<string | null>(null);
   const [hoveredNodeId, setHoveredNodeId] = useState<string | null>(null);
 
-  const initializePositions = useCallback(() => {
-    const map = new Map<string, NodePosition>();
+  // Incremental Position Update: Keeps existing positions stable, adds new nodes, removes deleted nodes
+  const updateNodePositions = useCallback(() => {
+    const map = nodePositionsRef.current;
+    const currentIds = new Set(users.map(u => u.id));
+
+    // 1. Remove entries for IDs no longer present in users
+    for (const id of Array.from(map.keys())) {
+      if (!currentIds.has(id)) {
+        map.delete(id);
+      }
+    }
+
     const width = 1000;
     const height = 700;
-
     const clusterCenters: { [key: string]: { x: number; y: number } } = {
-      c1: { x: width * 0.28, y: height * 0.32 }, // Top-Left (Tech Innovators)
-      c2: { x: width * 0.72, y: height * 0.32 }, // Top-Right (Data Scientists)
-      c3: { x: width * 0.28, y: height * 0.72 }, // Bottom-Left (Product Designers)
-      c4: { x: width * 0.72, y: height * 0.72 }  // Bottom-Right (Growth Engineers)
+      c1: { x: width * 0.28, y: height * 0.32 }, // Top-Left
+      c2: { x: width * 0.72, y: height * 0.32 }, // Top-Right
+      c3: { x: width * 0.28, y: height * 0.72 }, // Bottom-Left
+      c4: { x: width * 0.72, y: height * 0.72 }  // Bottom-Right
     };
 
     const communityCounts: { [key: string]: number } = { c1: 0, c2: 0, c3: 0, c4: 0 };
 
+    // Count existing nodes per community to maintain cluster alignment
     users.forEach(user => {
-      const commId = user.communityId || 'c1';
-      const center = clusterCenters[commId] || { x: width / 2, y: height / 2 };
-      const index = communityCounts[commId] || 0;
-      communityCounts[commId] = index + 1;
-
-      const radiusOffset = 80 + (index % 3) * 35;
-      const angle = (index * (Math.PI * 2 / 6)) + (commId === 'c1' ? 0.3 : 0);
-
-      const x = center.x + Math.cos(angle) * radiusOffset;
-      const y = center.y + Math.sin(angle) * radiusOffset;
-      const nodeRadius = Math.max(16, Math.min(26, 14 + user.connectionCount * 1.5));
-
-      map.set(user.id, { id: user.id, x, y, radius: nodeRadius });
+      if (map.has(user.id)) {
+        const commId = user.communityId || 'c1';
+        communityCounts[commId] = (communityCounts[commId] || 0) + 1;
+      }
     });
 
-    nodePositionsRef.current = map;
+    // 2. Add positions for new nodes and update radius for existing nodes
+    users.forEach(user => {
+      const nodeRadius = Math.max(16, Math.min(26, 14 + user.connectionCount * 1.5));
+      const existing = map.get(user.id);
+
+      if (existing) {
+        // Keep x & y stable, update radius to reflect new connection count
+        existing.radius = nodeRadius;
+      } else {
+        // Calculate stable position for newly added node
+        const commId = user.communityId || 'c1';
+        const center = clusterCenters[commId] || { x: width / 2, y: height / 2 };
+        const index = communityCounts[commId] || 0;
+        communityCounts[commId] = index + 1;
+
+        const radiusOffset = 80 + (index % 3) * 35;
+        const angle = (index * (Math.PI * 2 / 6)) + (commId === 'c1' ? 0.3 : 0);
+
+        const x = center.x + Math.cos(angle) * radiusOffset;
+        const y = center.y + Math.sin(angle) * radiusOffset;
+
+        map.set(user.id, { id: user.id, x, y, radius: nodeRadius });
+      }
+    });
   }, [users]);
 
   useEffect(() => {
-    if (nodePositionsRef.current.size === 0 || nodePositionsRef.current.size !== users.length) {
-      initializePositions();
-    }
-  }, [users, initializePositions]);
+    updateNodePositions();
+  }, [users, updateNodePositions]);
 
   // Main Render Loop
   const render = useCallback(() => {
@@ -141,7 +163,8 @@ export const NetworkCanvas: React.FC = () => {
       users.forEach(u => {
         if (
           u.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-          u.username.toLowerCase().includes(searchTerm.toLowerCase())
+          u.username.toLowerCase().includes(searchTerm.toLowerCase()) ||
+          u.id.toLowerCase().includes(searchTerm.toLowerCase())
         ) {
           matchingSearchIds.add(u.id);
         }
@@ -157,10 +180,11 @@ export const NetworkCanvas: React.FC = () => {
       }
     }
 
-    // 1. Draw Edges
+    // 1. Draw Edges (with Dangling-Edge Safety)
     connections.forEach(conn => {
       const sourcePos = positions.get(conn.sourceUserId);
       const targetPos = positions.get(conn.targetUserId);
+      // Dangling-edge safety: no-op if either endpoint node is missing
       if (!sourcePos || !targetPos) return;
 
       const isPathEdge = pathEdges.has(`${conn.sourceUserId}-${conn.targetUserId}`);
@@ -360,7 +384,7 @@ export const NetworkCanvas: React.FC = () => {
   const handleResetView = () => {
     setScale(1);
     setOffset({ x: 0, y: 0 });
-    initializePositions();
+    updateNodePositions();
   };
 
   return (
@@ -374,6 +398,14 @@ export const NetworkCanvas: React.FC = () => {
         onWheel={handleWheel}
         className="w-full h-full cursor-grab active:cursor-grabbing block"
       />
+
+      {/* Info Badge for Unconnected Nodes */}
+      {users.length > 0 && connections.length === 0 && (
+        <div className="absolute top-4 right-4 z-10 p-2.5 rounded-xl bg-[#18181b]/90 backdrop-blur-md border border-white/10 shadow-xl flex items-center gap-2 text-xs text-zinc-400">
+          <Info className="w-4 h-4 text-zinc-300 shrink-0" />
+          <span>These users are currently not connected.</span>
+        </div>
+      )}
 
       {/* Community Legend Overlay */}
       <div className="absolute top-4 left-4 p-3.5 rounded-xl bg-[#18181b]/90 backdrop-blur-md border border-white/10 shadow-xl space-y-2 text-xs">
