@@ -1,8 +1,10 @@
 package com.snga.model;
 
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
@@ -16,6 +18,7 @@ import java.util.Set;
  * <ul>
  *   <li>{@link #addFriendship(int, int)} — O(1)</li>
  *   <li>{@link #getFriends(int)} — O(1) lookup, returns the full neighbour set</li>
+ *   <li>{@link #getEdges()} — O(V + E) where V = users, E = edges</li>
  * </ul>
  *
  * This class carries no Spring annotations so that it can be discussed
@@ -123,6 +126,26 @@ public class Graph {
             return Collections.emptySet();
         }
         return Collections.unmodifiableSet(friends);
+    }
+
+    /**
+     * Returns every undirected edge exactly once as a list of
+     * {@code int[]{source, target}} pairs where {@code source < target}.
+     * <p>
+     * Complexity: O(V + E) — iterates each user's neighbour set once,
+     * emitting the edge only when the current userId is the smaller id.
+     */
+    public List<int[]> getEdges() {
+        List<int[]> edges = new ArrayList<>();
+        for (Map.Entry<Integer, Set<Integer>> entry : adjacencyList.entrySet()) {
+            int userId = entry.getKey();
+            for (int friendId : entry.getValue()) {
+                if (userId < friendId) {
+                    edges.add(new int[]{userId, friendId});
+                }
+            }
+        }
+        return edges;
     }
 
     // --------------------------------------------------------------- getters
