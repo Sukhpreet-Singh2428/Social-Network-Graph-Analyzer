@@ -1,6 +1,6 @@
 import React, { useRef, useEffect, useState, useCallback } from 'react';
 import { useGraph } from '../../context/GraphContext';
-import { ZoomIn, ZoomOut, RefreshCw, Layers, Info } from 'lucide-react';
+import { ZoomIn, ZoomOut, RefreshCw, Maximize2, Layers, Info } from 'lucide-react';
 
 interface Point {
   x: number;
@@ -22,6 +22,7 @@ export const NetworkCanvas: React.FC = () => {
     selectedNodeId,
     setSelectedNodeId,
     highlightedPath,
+    setHighlightedPath,
     searchTerm,
     communityFilter,
     nodeLabelsVisible
@@ -34,11 +35,13 @@ export const NetworkCanvas: React.FC = () => {
   const [offset, setOffset] = useState<Point>({ x: 0, y: 0 });
   const [isPanning, setIsPanning] = useState<boolean>(false);
   const [startPan, setStartPan] = useState<Point>({ x: 0, y: 0 });
+  const [mouseDownPos, setMouseDownPos] = useState<Point>({ x: 0, y: 0 });
 
-  // Node Positions (Persistent across re-renders for node stability)
+  // Node Positions (Persistent across re-renders for node position stability)
   const nodePositionsRef = useRef<Map<string, NodePosition>>(new Map());
   const [draggingNodeId, setDraggingNodeId] = useState<string | null>(null);
   const [hoveredNodeId, setHoveredNodeId] = useState<string | null>(null);
+  const [hoverScreenPos, setHoverScreenPos] = useState<Point | null>(null);
 
   // Incremental Position Update: Keeps existing positions stable, adds new nodes, removes deleted nodes
   const updateNodePositions = useCallback(() => {
@@ -101,6 +104,86 @@ export const NetworkCanvas: React.FC = () => {
     updateNodePositions();
   }, [users, updateNodePositions]);
 
+  // 2B.7 — Keyboard Escape Listener for clearing selection
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        const activeTag = document.activeElement?.tagName.toLowerCase();
+        if (activeTag !== 'input' && activeTag !== 'select' && activeTag !== 'textarea') {
+          setSelectedNodeId(null);
+          setHighlightedPath([]);
+        }
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [setSelectedNodeId, setHighlightedPath]);
+
+  // 2B.1 — Coordinate transformation utility
+  const screenToGraphPoint = useCallback((screenX: number, screenY: number): Point => {
+    const canvas = canvasRef.current;
+    if (!canvas) return { x: 0, y: 0 };
+    const rect = canvas.getBoundingClientRect();
+    const x = (screenX - rect.left - offset.x) / scale;
+    const y = (screenY - rect.top - offset.y) / scale;
+    return { x, y };
+  }, [offset, scale]);
+
+  // 2B.2 — Node Hit-Testing with Z-Order and Filter Respect
+  const getNodeAtScreenPoint = useCallback((screenX: number, screenY: number): string | null => {
+    const graphPt = screenToGraphPoint(screenX, screenY);
+    const positions = nodePositionsRef.current;
+
+    // Build filtered users set
+    const validUsers = new Set<string>();
+    users.forEach(u => {
+      if (communityFilter !== 'all' && u.communityId !== communityFilter) return;
+      validUsers.add(u.id);
+    });
+
+    const entries = Array.from(positions.entries());
+    // Reverse z-order iteration so topmost node wins
+    for (let i = entries.length - 1; i >= 0; i--) {
+      const [id, pos] = entries[i];
+      if (!validUsers.has(id)) continue;
+
+      const dx = graphPt.x - pos.x;
+      const dy = graphPt.y - pos.y;
+      if (dx * dx + dy * dy <= (pos.radius + 3) * (pos.radius + 3)) {
+        return id;
+      }
+    }
+    return null;
+  }, [screenToGraphPoint, users, communityFilter]);
+
+  // 2B.8 — Center viewport on node
+  const centerOnNode = useCallback((nodeId: string) => {
+    const pos = nodePositionsRef.current.get(nodeId);
+    const canvas = canvasRef.current;
+    if (!pos || !canvas) return;
+
+    const rect = canvas.getBoundingClientRect();
+    const targetOffsetX = (rect.width / 2) - (pos.x * scale);
+    const targetOffsetY = (rect.height / 2) - (pos.y * scale);
+
+    setOffset({ x: targetOffsetX, y: targetOffsetY });
+  }, [scale]);
+
+  // Trigger search focus when search term matches exactly one user
+  useEffect(() => {
+    if (searchTerm.trim()) {
+      const matches = users.filter(u =>
+        u.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        u.username.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        u.id.toLowerCase().includes(searchTerm.toLowerCase())
+      );
+      if (matches.length === 1) {
+        setSelectedNodeId(matches[0].id);
+        centerOnNode(matches[0].id);
+      }
+    }
+  }, [searchTerm, users, setSelectedNodeId, centerOnNode]);
+
   // Main Render Loop
   const render = useCallback(() => {
     const canvas = canvasRef.current;
@@ -157,6 +240,18 @@ export const NetworkCanvas: React.FC = () => {
       c4: '#e4e4e7'  // Off-white
     };
 
+    // 2B.5 — Compute Neighbors of Selected Node
+    const selectedNeighborIds = new Set<string>();
+    if (selectedNodeId) {
+      connections.forEach(conn => {
+        if (conn.sourceUserId === selectedNodeId) {
+          selectedNeighborIds.add(conn.targetUserId);
+        } else if (conn.targetUserId === selectedNodeId) {
+          selectedNeighborIds.add(conn.sourceUserId);
+        }
+      });
+    }
+
     // Search matches
     const matchingSearchIds = new Set<string>();
     if (searchTerm.trim()) {
@@ -180,7 +275,7 @@ export const NetworkCanvas: React.FC = () => {
       }
     }
 
-    // 1. Draw Edges (with Dangling-Edge Safety)
+    // 1. Draw Edges (with Dangling-Edge & Neighbor Safety)
     connections.forEach(conn => {
       const sourcePos = positions.get(conn.sourceUserId);
       const targetPos = positions.get(conn.targetUserId);
@@ -202,8 +297,13 @@ export const NetworkCanvas: React.FC = () => {
         ctx.shadowColor = '#ffffff';
         ctx.shadowBlur = 8;
       } else if (isConnectedToSelected) {
-        ctx.strokeStyle = 'rgba(255, 255, 255, 0.7)';
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.85)';
         ctx.lineWidth = 2.5 / scale;
+        ctx.shadowBlur = 0;
+      } else if (selectedNodeId) {
+        // Dim unrelated edges when a node is selected
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.04)';
+        ctx.lineWidth = 1 / scale;
         ctx.shadowBlur = 0;
       } else {
         ctx.strokeStyle = 'rgba(255, 255, 255, 0.12)';
@@ -215,7 +315,7 @@ export const NetworkCanvas: React.FC = () => {
       ctx.shadowBlur = 0;
     });
 
-    // 2. Draw Nodes
+    // 2. Draw Nodes (with Neighbor Dimming & Highlighting)
     users.forEach(user => {
       if (communityFilter !== 'all' && user.communityId !== communityFilter) return;
 
@@ -223,28 +323,37 @@ export const NetworkCanvas: React.FC = () => {
       if (!pos) return;
 
       const isSelected = selectedNodeId === user.id;
+      const isNeighbor = selectedNeighborIds.has(user.id);
       const isHovered = hoveredNodeId === user.id;
       const isInPath = highlightedPath.includes(user.id);
       const isSearchMatch = matchingSearchIds.has(user.id);
       const commColor = communityColorMap[user.communityId] || '#ffffff';
 
+      // 2B.5 — Dimming unrelated nodes when selection is active
+      const isDimmed = selectedNodeId && !isSelected && !isNeighbor && !isInPath && !isSearchMatch;
+
+      ctx.save();
+      if (isDimmed) {
+        ctx.globalAlpha = 0.25;
+      }
+
       // Outer Highlight Ring
-      if (isSelected || isSearchMatch || isInPath) {
+      if (isSelected || isSearchMatch || isInPath || isNeighbor) {
         ctx.beginPath();
-        ctx.arc(pos.x, pos.y, pos.radius + 6, 0, Math.PI * 2);
-        ctx.strokeStyle = isSelected ? '#ffffff' : isSearchMatch ? '#e4e4e7' : '#a1a1aa';
-        ctx.lineWidth = 2.5 / scale;
+        ctx.arc(pos.x, pos.y, pos.radius + (isSelected ? 6 : 4), 0, Math.PI * 2);
+        ctx.strokeStyle = isSelected ? '#ffffff' : isSearchMatch ? '#e4e4e7' : isNeighbor ? 'rgba(255, 255, 255, 0.7)' : '#a1a1aa';
+        ctx.lineWidth = (isSelected ? 3 : 2) / scale;
         ctx.stroke();
       }
 
       // Base Node
       ctx.beginPath();
       ctx.arc(pos.x, pos.y, pos.radius, 0, Math.PI * 2);
-      ctx.fillStyle = '#18181b';
+      ctx.fillStyle = isSelected ? '#27272a' : '#18181b';
       ctx.fill();
 
       // Community Border
-      ctx.lineWidth = (isHovered ? 4 : 2.5) / scale;
+      ctx.lineWidth = (isHovered ? 4 : isSelected ? 3.5 : 2.5) / scale;
       ctx.strokeStyle = commColor;
       ctx.stroke();
 
@@ -272,13 +381,15 @@ export const NetworkCanvas: React.FC = () => {
       }
 
       // Node Label
-      if (nodeLabelsVisible || isSelected || isHovered || isSearchMatch) {
-        ctx.fillStyle = isSelected ? '#ffffff' : '#a1a1aa';
-        ctx.font = `${isSelected ? 'bold' : '500'} ${11 / scale}px sans-serif`;
+      if (nodeLabelsVisible || isSelected || isHovered || isSearchMatch || isNeighbor) {
+        ctx.fillStyle = isSelected ? '#ffffff' : isNeighbor ? '#e4e4e7' : '#a1a1aa';
+        ctx.font = `${isSelected || isNeighbor ? 'bold' : '500'} ${11 / scale}px sans-serif`;
         ctx.textAlign = 'center';
         ctx.textBaseline = 'top';
         ctx.fillText(user.name, pos.x, pos.y + pos.radius + 5);
       }
+
+      ctx.restore();
     });
 
     ctx.restore();
@@ -299,34 +410,13 @@ export const NetworkCanvas: React.FC = () => {
     render();
   }, [render]);
 
-  const screenToCanvasPoint = (screenX: number, screenY: number): Point => {
-    const canvas = canvasRef.current;
-    if (!canvas) return { x: 0, y: 0 };
-    const rect = canvas.getBoundingClientRect();
-    const x = (screenX - rect.left - offset.x) / scale;
-    const y = (screenY - rect.top - offset.y) / scale;
-    return { x, y };
-  };
-
-  const getNodeAtPoint = (point: Point): string | null => {
-    const positions = nodePositionsRef.current;
-    for (const [id, pos] of positions.entries()) {
-      const dx = point.x - pos.x;
-      const dy = point.y - pos.y;
-      if (dx * dx + dy * dy <= pos.radius * pos.radius) {
-        return id;
-      }
-    }
-    return null;
-  };
-
+  // Event Handlers (Pan, Drag, Click & Hover)
   const handleMouseDown = (e: React.MouseEvent<HTMLCanvasElement>) => {
-    const pt = screenToCanvasPoint(e.clientX, e.clientY);
-    const clickedNodeId = getNodeAtPoint(pt);
+    setMouseDownPos({ x: e.clientX, y: e.clientY });
+    const clickedNodeId = getNodeAtScreenPoint(e.clientX, e.clientY);
 
     if (clickedNodeId) {
       setDraggingNodeId(clickedNodeId);
-      setSelectedNodeId(clickedNodeId);
     } else {
       setIsPanning(true);
       setStartPan({ x: e.clientX - offset.x, y: e.clientY - offset.y });
@@ -334,13 +424,12 @@ export const NetworkCanvas: React.FC = () => {
   };
 
   const handleMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
-    const pt = screenToCanvasPoint(e.clientX, e.clientY);
-
     if (draggingNodeId) {
+      const graphPt = screenToGraphPoint(e.clientX, e.clientY);
       const pos = nodePositionsRef.current.get(draggingNodeId);
       if (pos) {
-        pos.x = pt.x;
-        pos.y = pt.y;
+        pos.x = graphPt.x;
+        pos.y = graphPt.y;
         render();
       }
     } else if (isPanning) {
@@ -349,14 +438,42 @@ export const NetworkCanvas: React.FC = () => {
         y: e.clientY - startPan.y
       });
     } else {
-      const hoverId = getNodeAtPoint(pt);
+      // 2B.3 — Hover Hit-Testing & Tooltip Positioning
+      const hoverId = getNodeAtScreenPoint(e.clientX, e.clientY);
       if (hoverId !== hoveredNodeId) {
         setHoveredNodeId(hoverId);
+      }
+      if (hoverId) {
+        const canvas = canvasRef.current;
+        if (canvas) {
+          const rect = canvas.getBoundingClientRect();
+          setHoverScreenPos({
+            x: e.clientX - rect.left,
+            y: e.clientY - rect.top
+          });
+        }
+      } else {
+        setHoverScreenPos(null);
       }
     }
   };
 
-  const handleMouseUp = () => {
+  // 2B.4 — Click to Select with drag distance threshold
+  const handleMouseUp = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    const moveDist = Math.hypot(e.clientX - mouseDownPos.x, e.clientY - mouseDownPos.y);
+
+    if (moveDist < 5) {
+      // It is a clean click gesture!
+      const targetNodeId = getNodeAtScreenPoint(e.clientX, e.clientY);
+      if (targetNodeId) {
+        setSelectedNodeId(targetNodeId);
+      } else {
+        // Empty canvas click clears selection & path
+        setSelectedNodeId(null);
+        setHighlightedPath([]);
+      }
+    }
+
     setDraggingNodeId(null);
     setIsPanning(false);
   };
@@ -381,11 +498,44 @@ export const NetworkCanvas: React.FC = () => {
 
   const handleZoomIn = () => setScale(prev => Math.min(2.5, prev * 1.2));
   const handleZoomOut = () => setScale(prev => Math.max(0.4, prev / 1.2));
+
+  // 2B.10 — Reset View: resets scale and translation only, preserves node positions
   const handleResetView = () => {
     setScale(1);
     setOffset({ x: 0, y: 0 });
-    updateNodePositions();
   };
+
+  // 2B.9 — Fit Graph: calculates bounding box of all nodes and fits within viewport
+  const handleFitGraph = () => {
+    const positions = Array.from(nodePositionsRef.current.values());
+    const canvas = canvasRef.current;
+    if (positions.length === 0 || !canvas) return;
+
+    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+    positions.forEach(p => {
+      minX = Math.min(minX, p.x - p.radius);
+      maxX = Math.max(maxX, p.x + p.radius);
+      minY = Math.min(minY, p.y - p.radius);
+      maxY = Math.max(maxY, p.y + p.radius);
+    });
+
+    const padding = 60;
+    const bboxW = Math.max(100, (maxX - minX) + padding * 2);
+    const bboxH = Math.max(100, (maxY - minY) + padding * 2);
+    const bboxCenterX = (minX + maxX) / 2;
+    const bboxCenterY = (minY + maxY) / 2;
+
+    const rect = canvas.getBoundingClientRect();
+    const fitScale = Math.max(0.4, Math.min(2.5, Math.min(rect.width / bboxW, rect.height / bboxH)));
+
+    const fitOffsetX = (rect.width / 2) - (bboxCenterX * fitScale);
+    const fitOffsetY = (rect.height / 2) - (bboxCenterY * fitScale);
+
+    setScale(fitScale);
+    setOffset({ x: fitOffsetX, y: fitOffsetY });
+  };
+
+  const hoveredUser = users.find(u => u.id === hoveredNodeId);
 
   return (
     <div className="relative w-full h-full flex-1 overflow-hidden bg-[#09090b] select-none">
@@ -396,8 +546,31 @@ export const NetworkCanvas: React.FC = () => {
         onMouseUp={handleMouseUp}
         onMouseLeave={handleMouseUp}
         onWheel={handleWheel}
-        className="w-full h-full cursor-grab active:cursor-grabbing block"
+        className={`w-full h-full block ${
+          hoveredNodeId ? 'cursor-pointer' : isPanning ? 'cursor-grabbing' : 'cursor-grab'
+        }`}
       />
+
+      {/* 2B.3 — Hover Tooltip */}
+      {hoveredUser && hoverScreenPos && (
+        <div
+          className="absolute z-30 pointer-events-none p-2.5 rounded-lg bg-zinc-900/95 backdrop-blur-md border border-white/10 shadow-2xl text-xs space-y-0.5"
+          style={{
+            top: `${Math.min(window.innerHeight - 100, hoverScreenPos.y + 14)}px`,
+            left: `${Math.min(window.innerWidth - 200, hoverScreenPos.x + 14)}px`
+          }}
+        >
+          <div className="flex items-center gap-2">
+            <span className="font-bold text-zinc-100">{hoveredUser.name}</span>
+            <span className="text-[10px] font-mono text-zinc-400 bg-zinc-800 px-1.5 py-0.5 rounded border border-zinc-700">
+              #{hoveredUser.id}
+            </span>
+          </div>
+          <p className="text-[11px] text-zinc-400 font-mono">
+            {hoveredUser.connectionCount} edges • {hoveredUser.role}
+          </p>
+        </div>
+      )}
 
       {/* Info Badge for Unconnected Nodes */}
       {users.length > 0 && connections.length === 0 && (
@@ -423,8 +596,8 @@ export const NetworkCanvas: React.FC = () => {
         </div>
       </div>
 
-      {/* Viewport Toolbar Controls */}
-      <div className="absolute bottom-6 left-1/2 -translate-x-1/2 flex items-center gap-1.5 p-1.5 rounded-xl bg-[#18181b]/95 backdrop-blur-md border border-white/10 shadow-2xl">
+      {/* Viewport Toolbar Controls (Includes 2B.9 Fit Graph & 2B.10 Reset View) */}
+      <div className="absolute bottom-6 left-1/2 -translate-x-1/2 flex items-center gap-1.5 p-1.5 rounded-xl bg-[#18181b]/95 backdrop-blur-md border border-white/10 shadow-2xl z-20">
         <button
           onClick={handleZoomIn}
           className="p-2 rounded-lg text-zinc-300 hover:text-white hover:bg-white/10 transition-colors"
@@ -439,6 +612,17 @@ export const NetworkCanvas: React.FC = () => {
         >
           <ZoomOut className="w-4 h-4" />
         </button>
+
+        {/* 2B.9 — Fit Graph Button */}
+        <button
+          onClick={handleFitGraph}
+          className="p-2 rounded-lg text-zinc-300 hover:text-white hover:bg-white/10 transition-colors"
+          title="Fit Graph to Viewport"
+        >
+          <Maximize2 className="w-4 h-4" />
+        </button>
+
+        {/* 2B.10 — Reset View Button */}
         <button
           onClick={handleResetView}
           className="p-2 rounded-lg text-zinc-300 hover:text-white hover:bg-white/10 transition-colors"
@@ -446,6 +630,7 @@ export const NetworkCanvas: React.FC = () => {
         >
           <RefreshCw className="w-4 h-4" />
         </button>
+
         <div className="w-px h-4 bg-white/10 mx-1" />
         <span className="px-2 text-xs font-mono text-zinc-100 font-bold">
           {Math.round(scale * 100)}%

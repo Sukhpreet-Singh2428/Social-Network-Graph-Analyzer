@@ -84,6 +84,26 @@ export interface PathResult {
   found: boolean;
 }
 
+export interface BfsLevel {
+  depth: number;
+  nodes: User[];
+}
+
+export interface BfsTraversalResult {
+  startId: string;
+  startUser: User | null;
+  visitedOrder: User[];
+  levels: BfsLevel[];
+  totalVisited: number;
+}
+
+export interface DfsTraversalResult {
+  startId: string;
+  startUser: User | null;
+  visitedOrder: User[];
+  totalVisited: number;
+}
+
 export interface ActivityItem {
   id: string;
   timestamp: string;

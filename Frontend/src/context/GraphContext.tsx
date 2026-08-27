@@ -3,6 +3,7 @@ import type { User, Connection, Community, ToastMessage, PathResult, CommunityId
 import { MOCK_COMMUNITIES } from '../data/mockData';
 import { userApi } from '../api/userApi';
 import { connectionApi } from '../api/connectionApi';
+import { bfsShortestPath } from '../utils/graphAlgorithms';
 
 interface GraphContextType {
   users: User[];
@@ -366,61 +367,7 @@ export const GraphProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   };
 
   const findPath = (sourceId: string, targetId: string): PathResult => {
-    const src = getUserById(sourceId);
-    const tgt = getUserById(targetId);
-
-    if (!src || !tgt) {
-      return { sourceUser: src!, targetUser: tgt!, path: [], pathLength: 0, degreesOfSeparation: 0, found: false };
-    }
-
-    if (sourceId === targetId) {
-      return { sourceUser: src, targetUser: tgt, path: [src], pathLength: 0, degreesOfSeparation: 0, found: true };
-    }
-
-    const adj: { [key: string]: string[] } = {};
-    users.forEach(u => { adj[u.id] = []; });
-    connections.forEach(c => {
-      if (adj[c.sourceUserId]) adj[c.sourceUserId].push(c.targetUserId);
-      if (adj[c.targetUserId]) adj[c.targetUserId].push(c.sourceUserId);
-    });
-
-    const queue: string[][] = [[sourceId]];
-    const visited = new Set<string>([sourceId]);
-
-    while (queue.length > 0) {
-      const currentPath = queue.shift()!;
-      const lastNode = currentPath[currentPath.length - 1];
-
-      if (lastNode === targetId) {
-        const fullUserPath = currentPath.map(id => getUserById(id)!);
-        const pathLength = currentPath.length - 1;
-        return {
-          sourceUser: src,
-          targetUser: tgt,
-          path: fullUserPath,
-          pathLength,
-          degreesOfSeparation: pathLength,
-          found: true
-        };
-      }
-
-      const neighbors = adj[lastNode] || [];
-      for (const neighbor of neighbors) {
-        if (!visited.has(neighbor)) {
-          visited.add(neighbor);
-          queue.push([...currentPath, neighbor]);
-        }
-      }
-    }
-
-    return {
-      sourceUser: src,
-      targetUser: tgt,
-      path: [],
-      pathLength: 0,
-      degreesOfSeparation: 0,
-      found: false
-    };
+    return bfsShortestPath(users, connections, sourceId, targetId);
   };
 
   return (
