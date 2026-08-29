@@ -1,4 +1,4 @@
-export type CommunityId = 'c1' | 'c2' | 'c3' | 'c4';
+export type CommunityId = string;
 
 export interface Community {
   id: CommunityId;
@@ -10,6 +10,7 @@ export interface Community {
   density: number;
   mostConnectedMember: string;
   description: string;
+  memberIds: string[];
 }
 
 export interface User {
@@ -102,6 +103,19 @@ export interface DfsTraversalResult {
   startUser: User | null;
   visitedOrder: User[];
   totalVisited: number;
+}
+
+export interface NetworkAnalytics {
+  totalUsers: number;
+  totalConnections: number;
+  avgDegree: number;
+  maxDegree: number;
+  mostConnectedUser: User | null;
+  totalCommunities: number;
+  largestCommunitySize: number;
+  isolatedUserCount: number;
+  graphDensity: number;
+  degreeDistribution: { degree: number; count: number }[];
 }
 
 export interface ActivityItem {
