@@ -10,7 +10,8 @@ export const MOCK_COMMUNITIES: Community[] = [
     connectionCount: 16,
     density: 0.57,
     mostConnectedMember: 'Alex Mercer',
-    description: 'Engineers, system architects, and tech leads driving core infrastructure.'
+    description: 'Engineers, system architects, and tech leads driving core infrastructure.',
+    memberIds: []
   },
   {
     id: 'c2',
@@ -21,7 +22,8 @@ export const MOCK_COMMUNITIES: Community[] = [
     connectionCount: 14,
     density: 0.62,
     mostConnectedMember: 'Dr. Elena Rostova',
-    description: 'AI researchers, graph algorithmists, and quantitative analysts.'
+    description: 'AI researchers, graph algorithmists, and quantitative analysts.',
+    memberIds: []
   },
   {
     id: 'c3',
@@ -32,7 +34,8 @@ export const MOCK_COMMUNITIES: Community[] = [
     connectionCount: 11,
     density: 0.51,
     mostConnectedMember: 'Sophia Chen',
-    description: 'UX architects, visual designers, and interaction strategists.'
+    description: 'UX architects, visual designers, and interaction strategists.',
+    memberIds: []
   },
   {
     id: 'c4',
@@ -43,7 +46,8 @@ export const MOCK_COMMUNITIES: Community[] = [
     connectionCount: 9,
     density: 0.45,
     mostConnectedMember: 'Marcus Vance',
-    description: 'Product managers, growth hackers, and ecosystem strategists.'
+    description: 'Product managers, growth hackers, and ecosystem strategists.',
+    memberIds: []
   }
 ];
 

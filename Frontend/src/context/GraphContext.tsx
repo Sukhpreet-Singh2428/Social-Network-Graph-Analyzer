@@ -1,9 +1,8 @@
-import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
-import type { User, Connection, Community, ToastMessage, PathResult, CommunityId } from '../types';
-import { MOCK_COMMUNITIES } from '../data/mockData';
+import React, { createContext, useContext, useState, useEffect, useCallback, useMemo } from 'react';
+import type { User, Connection, Community, ToastMessage, PathResult } from '../types';
 import { userApi } from '../api/userApi';
 import { connectionApi } from '../api/connectionApi';
-import { bfsShortestPath } from '../utils/graphAlgorithms';
+import { bfsShortestPath, findConnectedComponents } from '../utils/graphAlgorithms';
 
 interface GraphContextType {
   users: User[];
@@ -17,31 +16,34 @@ interface GraphContextType {
   setSearchTerm: (term: string) => void;
   communityFilter: string;
   setCommunityFilter: (filter: string) => void;
-  theme: 'dark' | 'light';
-  toggleTheme: () => void;
   nodeLabelsVisible: boolean;
   setNodeLabelsVisible: (visible: boolean) => void;
   toasts: ToastMessage[];
   addToast: (title: string, description?: string, type?: ToastMessage['type']) => void;
   removeToast: (id: string) => void;
+  theme: 'dark' | 'light';
+  toggleTheme: () => void;
   usersLoading: boolean;
   connectionsLoading: boolean;
   usersError: string | null;
   connectionsError: string | null;
   refetchData: () => Promise<void>;
   addUser: (id: number, name: string) => Promise<boolean>;
-  deleteUser: (userId: string | number) => Promise<boolean>;
+  deleteUser: (userId: string) => Promise<boolean>;
   addConnection: (sourceId: string, targetId: string, type?: Connection['connectionType']) => Promise<boolean>;
   deleteConnection: (connectionId: string) => Promise<boolean>;
-  findPath: (sourceId: string, targetId: string) => PathResult;
   getUserById: (id: string) => User | undefined;
   getMutualConnections: (user1Id: string, user2Id: string) => User[];
+  findPath: (sourceId: string, targetId: string) => PathResult;
 }
 
 const GraphContext = createContext<GraphContextType | undefined>(undefined);
 
-// Client-side presentational placeholders derived deterministically from numeric id and name
-function transformUser(backendUser: { id: number; name: string }, connectionCount: number, totalUsers: number): User {
+function transformUser(
+  backendUser: { id: number; name: string },
+  connectionCount: number,
+  totalUsers: number
+): User {
   const numericId = backendUser.id;
   const strId = String(numericId);
 
@@ -74,16 +76,10 @@ function transformUser(backendUser: { id: number; name: string }, connectionCoun
     'Chicago, IL'
   ];
 
-  const communityIds: CommunityId[] = ['c1', 'c2', 'c3', 'c4'];
-  const communityNames = ['Tech Innovators', 'Data Scientists', 'Product Designers', 'Growth Engineers'];
-
   const absId = Math.abs(numericId);
   const avatar = avatars[absId % avatars.length];
   const role = roles[absId % roles.length];
   const location = locations[absId % locations.length];
-  const commIdx = absId % communityIds.length;
-  const communityId = communityIds[commIdx];
-  const communityName = communityNames[commIdx];
 
   const sanitized = backendUser.name.toLowerCase().replace(/[^a-z0-9]/g, '');
   const username = `@${sanitized || 'user'}_${numericId}`;
@@ -94,30 +90,21 @@ function transformUser(backendUser: { id: number; name: string }, connectionCoun
   return {
     id: strId,
     name: backendUser.name,
-    // Client-side presentational placeholder: username is not stored on backend
     username,
-    // Client-side presentational placeholder: email is not stored on backend
     email,
-    // Client-side presentational placeholder: derived deterministically from numeric id
     avatar,
-    // Client-side presentational placeholder: derived deterministically from numeric id
     role,
-    // Client-side presentational placeholder: derived deterministically from numeric id
-    communityId,
-    // Client-side presentational placeholder: derived deterministically from numeric id
-    communityName,
+    // Real connected component IDs assigned dynamically after component detection
+    communityId: 'c_1',
+    communityName: 'Cluster #1',
     connectionCount,
     degreeCentrality,
-    // Client-side presentational placeholder: derived deterministically from numeric id
     status,
-    // Client-side presentational placeholder: static joined date
     joinedDate: '2025-01-15',
-    // Client-side presentational placeholder: derived deterministically from numeric id
     location
   };
 }
 
-// Client-side presentational placeholder derived deterministically from numeric source/target
 function transformEdge(edge: { source: number; target: number }, userMap: Map<string, User>): Connection {
   const srcId = String(edge.source);
   const tgtId = String(edge.target);
@@ -136,40 +123,58 @@ function transformEdge(edge: { source: number; target: number }, userMap: Map<st
     targetUserName: u2 ? u2.name : `User ${edge.target}`,
     sourceUserAvatar: u1 ? u1.avatar : '',
     targetUserAvatar: u2 ? u2.avatar : '',
-    // Client-side presentational placeholder: connectionType is not stored on backend
     connectionType,
-    // Client-side presentational placeholder: status is not stored on backend
     status: 'Active',
-    // Client-side presentational placeholder: connectedSince is not stored on backend
     connectedSince: '2025-01-20',
-    // Client-side presentational placeholder: strength is not stored on backend
     strength: 1 + (Math.abs(edge.source + edge.target) % 5)
   };
 }
 
 export const GraphProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [users, setUsers] = useState<User[]>([]);
+  const [rawUsers, setRawUsers] = useState<User[]>([]);
   const [connections, setConnections] = useState<Connection[]>([]);
-  const [communities] = useState<Community[]>(MOCK_COMMUNITIES);
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [highlightedPath, setHighlightedPath] = useState<string[]>([]);
   const [searchTerm, setSearchTerm] = useState<string>('');
   const [communityFilter, setCommunityFilter] = useState<string>('all');
-  const [theme, setTheme] = useState<'dark' | 'light'>('dark');
   const [nodeLabelsVisible, setNodeLabelsVisible] = useState<boolean>(true);
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
+  const [theme, setTheme] = useState<'dark' | 'light'>('dark');
 
   const [usersLoading, setUsersLoading] = useState<boolean>(true);
   const [connectionsLoading, setConnectionsLoading] = useState<boolean>(true);
   const [usersError, setUsersError] = useState<string | null>(null);
   const [connectionsError, setConnectionsError] = useState<string | null>(null);
 
-  // Dark / Light Theme Sync
+  // Sprint 4 — Real Memoized Connected Components (Communities)
+  const communities = useMemo(() => {
+    return findConnectedComponents(rawUsers, connections);
+  }, [rawUsers, connections]);
+
+  // Sprint 4 — Enriched users with real connected component IDs and names
+  const users = useMemo(() => {
+    const compMap = new Map<string, { id: string; name: string }>();
+    communities.forEach(c => {
+      c.memberIds.forEach(mId => {
+        compMap.set(mId, { id: c.id, name: c.name });
+      });
+    });
+
+    return rawUsers.map(u => {
+      const comp = compMap.get(u.id);
+      return {
+        ...u,
+        communityId: comp ? comp.id : 'c_1',
+        communityName: comp ? comp.name : 'Cluster #1'
+      };
+    });
+  }, [rawUsers, communities]);
+
   useEffect(() => {
     const root = document.documentElement;
     if (theme === 'dark') {
-      root.classList.remove('light');
       root.classList.add('dark');
+      root.classList.remove('light');
     } else {
       root.classList.remove('dark');
       root.classList.add('light');
@@ -201,7 +206,6 @@ export const GraphProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     try {
       const graphData = await connectionApi.getGraph();
 
-      // Compute connection counts for each user from edge list
       const connectionCountMap = new Map<number, number>();
       graphData.nodes.forEach(node => connectionCountMap.set(node.id, 0));
       graphData.edges.forEach(edge => {
@@ -218,7 +222,7 @@ export const GraphProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
       const transformedConnections = graphData.edges.map(edge => transformEdge(edge, userMap));
 
-      setUsers(transformedUsers);
+      setRawUsers(transformedUsers);
       setConnections(transformedConnections);
 
       if (transformedUsers.length > 0) {
@@ -249,20 +253,29 @@ export const GraphProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       await refetchData();
       return true;
     } catch (err: any) {
+      const status = err?.status;
       const msg = err?.message || 'Failed to create user.';
-      addToast('Failed to Add User', msg, 'error');
+      if (status === 409) {
+        addToast('Duplicate User ID', `User ID ${id} already exists in the graph.`, 'error');
+      } else if (status === 400) {
+        addToast('Invalid Input', msg, 'error');
+      } else {
+        addToast('Failed to Add User', msg, 'error');
+      }
       return false;
     }
   };
 
-  const deleteUser = async (userId: string | number): Promise<boolean> => {
-    const numericId = typeof userId === 'number' ? userId : parseInt(userId, 10);
-    const user = users.find(u => u.id === String(numericId));
-    const userName = user ? user.name : `User ${numericId}`;
+  const deleteUser = async (userId: string): Promise<boolean> => {
+    const numId = parseInt(userId, 10);
+    if (isNaN(numId)) {
+      addToast('Error', 'Invalid numeric user ID', 'error');
+      return false;
+    }
 
     try {
-      await userApi.deleteUser(numericId);
-      addToast('User Deleted', `${userName} (ID: ${numericId}) has been removed from the graph.`, 'info');
+      await userApi.deleteUser(numId);
+      addToast('User Deleted', `User node #${userId} was deleted from graph store.`, 'info');
       await refetchData();
       return true;
     } catch (err: any) {
@@ -272,21 +285,18 @@ export const GraphProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     }
   };
 
-  const addConnection = async (sourceId: string, targetId: string, _type?: Connection['connectionType']): Promise<boolean> => {
+  const addConnection = async (
+    sourceId: string,
+    targetId: string,
+    _type: Connection['connectionType'] = 'Colleague'
+  ): Promise<boolean> => {
     const numSource = parseInt(sourceId, 10);
     const numTarget = parseInt(targetId, 10);
-
     const u1 = getUserById(sourceId);
     const u2 = getUserById(targetId);
-    const u1Name = u1 ? u1.name : `User ${sourceId}`;
-    const u2Name = u2 ? u2.name : `User ${targetId}`;
+    const u1Name = u1 ? u1.name : `ID ${sourceId}`;
+    const u2Name = u2 ? u2.name : `ID ${targetId}`;
 
-    if (isNaN(numSource) || isNaN(numTarget)) {
-      addToast('Invalid Input', 'User IDs must be valid numbers.', 'error');
-      return false;
-    }
-
-    // Client-side pre-checks for immediate feedback
     if (numSource === numTarget) {
       addToast('Invalid Connection', 'Cannot create a friendship between a user and themselves', 'error');
       return false;
@@ -343,7 +353,7 @@ export const GraphProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
     try {
       await connectionApi.deleteFriendship(numSource, numTarget);
-      addToast('Connection Removed', `Connection deleted between User ${numSource} and User ${numTarget}.`, 'info');
+      addToast('Connection Deleted', 'Friendship edge removed successfully.', 'info');
       await refetchData();
       return true;
     } catch (err: any) {
@@ -384,13 +394,13 @@ export const GraphProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         setSearchTerm,
         communityFilter,
         setCommunityFilter,
-        theme,
-        toggleTheme,
         nodeLabelsVisible,
         setNodeLabelsVisible,
         toasts,
         addToast,
         removeToast,
+        theme,
+        toggleTheme,
         usersLoading,
         connectionsLoading,
         usersError,
@@ -400,9 +410,9 @@ export const GraphProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         deleteUser,
         addConnection,
         deleteConnection,
-        findPath,
         getUserById,
-        getMutualConnections
+        getMutualConnections,
+        findPath
       }}
     >
       {children}

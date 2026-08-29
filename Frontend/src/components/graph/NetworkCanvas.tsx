@@ -57,19 +57,24 @@ export const NetworkCanvas: React.FC = () => {
 
     const width = 1000;
     const height = 700;
-    const clusterCenters: { [key: string]: { x: number; y: number } } = {
-      c1: { x: width * 0.28, y: height * 0.32 }, // Top-Left
-      c2: { x: width * 0.72, y: height * 0.32 }, // Top-Right
-      c3: { x: width * 0.28, y: height * 0.72 }, // Bottom-Left
-      c4: { x: width * 0.72, y: height * 0.72 }  // Bottom-Right
-    };
+    const numComms = Math.max(1, communities.length);
+    const clusterDist = 220;
 
-    const communityCounts: { [key: string]: number } = { c1: 0, c2: 0, c3: 0, c4: 0 };
+    const clusterCenters: { [key: string]: { x: number; y: number } } = {};
+    communities.forEach((comm, idx) => {
+      const angle = (idx * (2 * Math.PI)) / numComms - Math.PI / 2;
+      clusterCenters[comm.id] = {
+        x: width / 2 + Math.cos(angle) * clusterDist,
+        y: height / 2 + Math.sin(angle) * clusterDist
+      };
+    });
+
+    const communityCounts: { [key: string]: number } = {};
 
     // Count existing nodes per community to maintain cluster alignment
     users.forEach(user => {
       if (map.has(user.id)) {
-        const commId = user.communityId || 'c1';
+        const commId = user.communityId || 'c_1';
         communityCounts[commId] = (communityCounts[commId] || 0) + 1;
       }
     });
@@ -84,13 +89,13 @@ export const NetworkCanvas: React.FC = () => {
         existing.radius = nodeRadius;
       } else {
         // Calculate stable position for newly added node
-        const commId = user.communityId || 'c1';
+        const commId = user.communityId || 'c_1';
         const center = clusterCenters[commId] || { x: width / 2, y: height / 2 };
         const index = communityCounts[commId] || 0;
         communityCounts[commId] = index + 1;
 
-        const radiusOffset = 80 + (index % 3) * 35;
-        const angle = (index * (Math.PI * 2 / 6)) + (commId === 'c1' ? 0.3 : 0);
+        const radiusOffset = 70 + (index % 3) * 30;
+        const angle = index * ((Math.PI * 2) / 6);
 
         const x = center.x + Math.cos(angle) * radiusOffset;
         const y = center.y + Math.sin(angle) * radiusOffset;
@@ -98,7 +103,7 @@ export const NetworkCanvas: React.FC = () => {
         map.set(user.id, { id: user.id, x, y, radius: nodeRadius });
       }
     });
-  }, [users]);
+  }, [users, communities]);
 
   useEffect(() => {
     updateNodePositions();
