@@ -1,5 +1,6 @@
 package com.snga.controller;
 
+import com.snga.dto.CommunityResponse;
 import com.snga.dto.GraphResponse;
 import com.snga.dto.PathResponse;
 import com.snga.service.GraphService;
@@ -9,8 +10,8 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * REST controller that returns the entire graph (nodes + deduplicated edges)
- * in a single call, for the frontend visualisation layer.
+ * REST controller for graph-level queries: full snapshot, shortest path,
+ * and connected components (communities).
  */
 @RestController
 @RequestMapping("/api")
@@ -38,5 +39,14 @@ public class GraphController {
     @GetMapping("/graph/path")
     public PathResponse getShortestPath(@RequestParam int source, @RequestParam int target) {
         return graphService.getShortestPath(source, target);
+    }
+
+    /**
+     * GET /api/graph/communities — returns all connected components
+     * with member lists, sizes, and internal edge counts.
+     */
+    @GetMapping("/graph/communities")
+    public CommunityResponse getCommunities() {
+        return graphService.getCommunities();
     }
 }
