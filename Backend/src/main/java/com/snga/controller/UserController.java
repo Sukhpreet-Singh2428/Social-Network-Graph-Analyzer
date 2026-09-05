@@ -1,6 +1,7 @@
 package com.snga.controller;
 
 import com.snga.dto.MutualFriendsResponse;
+import com.snga.dto.SuggestionResponse;
 import com.snga.dto.UserRequest;
 import com.snga.model.User;
 import com.snga.service.GraphService;
@@ -10,6 +11,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.Collection;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
@@ -75,5 +77,14 @@ public class UserController {
     @GetMapping("/{id}/mutual-friends/{otherId}")
     public MutualFriendsResponse getMutualFriends(@PathVariable int id, @PathVariable int otherId) {
         return graphService.getMutualFriends(id, otherId);
+    }
+
+    /**
+     * GET /api/users/{id}/suggestions — returns friend suggestions for
+     * the user based on friends-of-friends, ranked by mutual friend count.
+     */
+    @GetMapping("/{id}/suggestions")
+    public List<SuggestionResponse> getFriendSuggestions(@PathVariable int id) {
+        return graphService.getFriendSuggestions(id);
     }
 }
