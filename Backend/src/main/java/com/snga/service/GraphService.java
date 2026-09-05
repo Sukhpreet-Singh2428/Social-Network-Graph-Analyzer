@@ -3,6 +3,7 @@ package com.snga.service;
 import com.snga.dto.CommunityResponse;
 import com.snga.dto.EdgeDto;
 import com.snga.dto.GraphResponse;
+import com.snga.dto.MutualFriendsResponse;
 import com.snga.dto.NodeDto;
 import com.snga.dto.PathResponse;
 import com.snga.exception.ApiException;
@@ -129,6 +130,30 @@ public class GraphService {
         return graph.getFriends(userId);
     }
 
+    /**
+     * Returns the mutual friends between two users.
+     *
+     * @throws ApiException 400 if the two ids are equal.
+     * @throws ApiException 404 if either user does not exist.
+     */
+    public MutualFriendsResponse getMutualFriends(int userId1, int userId2) {
+        if (userId1 == userId2) {
+            throw new ApiException(HttpStatus.BAD_REQUEST,
+                    "Cannot query mutual friends for the same user");
+        }
+        if (!graph.userExists(userId1)) {
+            throw new ApiException(HttpStatus.NOT_FOUND,
+                    "User with id " + userId1 + " not found");
+        }
+        if (!graph.userExists(userId2)) {
+            throw new ApiException(HttpStatus.NOT_FOUND,
+                    "User with id " + userId2 + " not found");
+        }
+
+        List<Integer> mutualFriends = graph.getMutualFriends(userId1, userId2);
+        return new MutualFriendsResponse(userId1, userId2, mutualFriends, mutualFriends.size());
+    }
+
     // ----------------------------------------------------------- full graph
 
     /**
@@ -186,5 +211,5 @@ public class GraphService {
         return new CommunityResponse(communities);
     }
 
-    // TODO(chunk-8): mutual friends, friend suggestions
+    // TODO(chunk-9): friend suggestions
 }

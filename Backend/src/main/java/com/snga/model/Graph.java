@@ -281,6 +281,32 @@ public class Graph {
         return count;
     }
 
+    /**
+     * Finds the mutual friends between two users by computing the intersection
+     * of their friend sets.
+     * <p>
+     * Complexity: O(min(|A|, |B|)) where A and B are the friend sets of the
+     * two users, since {@link HashSet#retainAll} iterates over the smaller set
+     * and performs O(1) lookups in the larger set.
+     *
+     * @return a sorted list of mutual friend IDs, or an empty list if none.
+     */
+    public List<Integer> getMutualFriends(int userId1, int userId2) {
+        if (!userExists(userId1) || !userExists(userId2)) {
+            return Collections.emptyList();
+        }
+
+        Set<Integer> friends1 = getFriends(userId1);
+        Set<Integer> friends2 = getFriends(userId2);
+
+        Set<Integer> intersection = new HashSet<>(friends1);
+        intersection.retainAll(friends2);
+
+        List<Integer> result = new ArrayList<>(intersection);
+        Collections.sort(result);
+        return result;
+    }
+
     // --------------------------------------------------------------- getters
 
     public Map<Integer, User> getUsers() {
@@ -291,5 +317,5 @@ public class Graph {
         return Collections.unmodifiableMap(adjacencyList);
     }
 
-    // TODO(chunk-8): mutual friends, friend suggestions
+    // TODO(chunk-9): friend suggestions
 }

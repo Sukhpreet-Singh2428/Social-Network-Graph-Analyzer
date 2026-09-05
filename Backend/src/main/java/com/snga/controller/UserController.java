@@ -1,5 +1,6 @@
 package com.snga.controller;
 
+import com.snga.dto.MutualFriendsResponse;
 import com.snga.dto.UserRequest;
 import com.snga.model.User;
 import com.snga.service.GraphService;
@@ -65,5 +66,14 @@ public class UserController {
     @GetMapping("/{id}/friends")
     public Set<Integer> getFriends(@PathVariable int id) {
         return graphService.getFriends(id);
+    }
+
+    /**
+     * GET /api/users/{id}/mutual-friends/{otherId} — returns the mutual
+     * friends between two users.
+     */
+    @GetMapping("/{id}/mutual-friends/{otherId}")
+    public MutualFriendsResponse getMutualFriends(@PathVariable int id, @PathVariable int otherId) {
+        return graphService.getMutualFriends(id, otherId);
     }
 }
