@@ -6,6 +6,7 @@ import com.snga.dto.GraphResponse;
 import com.snga.dto.MutualFriendsResponse;
 import com.snga.dto.NodeDto;
 import com.snga.dto.PathResponse;
+import com.snga.dto.SuggestionResponse;
 import com.snga.exception.ApiException;
 import com.snga.model.Graph;
 import com.snga.model.User;
@@ -154,6 +155,33 @@ public class GraphService {
         return new MutualFriendsResponse(userId1, userId2, mutualFriends, mutualFriends.size());
     }
 
+    /**
+     * Returns friend suggestions for a given user, ranked by mutual friend count.
+     *
+     * @throws ApiException 404 if the user does not exist.
+     */
+    public List<SuggestionResponse> getFriendSuggestions(int userId) {
+        if (!graph.userExists(userId)) {
+            throw new ApiException(HttpStatus.NOT_FOUND,
+                    "User with id " + userId + " not found");
+        }
+
+        List<Graph.Suggestion> suggestions = graph.getFriendSuggestions(userId);
+        List<SuggestionResponse> response = new ArrayList<>();
+        
+        for (Graph.Suggestion s : suggestions) {
+            User u = graph.getUsers().get(s.userId);
+            response.add(new SuggestionResponse(
+                    s.userId,
+                    u != null ? u.getName() : "Unknown",
+                    s.mutualFriendCount,
+                    s.mutualFriends
+            ));
+        }
+
+        return response;
+    }
+
     // ----------------------------------------------------------- full graph
 
     /**
@@ -210,6 +238,4 @@ public class GraphService {
 
         return new CommunityResponse(communities);
     }
-
-    // TODO(chunk-9): friend suggestions
 }

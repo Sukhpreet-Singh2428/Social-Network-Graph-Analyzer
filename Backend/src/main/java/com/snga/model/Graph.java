@@ -307,6 +307,69 @@ public class Graph {
         return result;
     }
 
+    /**
+     * Represents a friend suggestion candidate.
+     */
+    public static class Suggestion implements Comparable<Suggestion> {
+        public final int userId;
+        public final int mutualFriendCount;
+        public final List<Integer> mutualFriends;
+
+        public Suggestion(int userId, int mutualFriendCount, List<Integer> mutualFriends) {
+            this.userId = userId;
+            this.mutualFriendCount = mutualFriendCount;
+            this.mutualFriends = mutualFriends;
+        }
+
+        @Override
+        public int compareTo(Suggestion other) {
+            if (this.mutualFriendCount != other.mutualFriendCount) {
+                return Integer.compare(other.mutualFriendCount, this.mutualFriendCount); // descending
+            }
+            return Integer.compare(this.userId, other.userId); // ascending
+        }
+    }
+
+    /**
+     * Generates friend suggestions for the given user based on friends-of-friends.
+     * Candidates are ranked by how many mutual connections they share with the target user.
+     * <p>
+     * Complexity: roughly O(F x F_avg) where F is the user's friend count and F_avg
+     * is the average friend count of those friends.
+     *
+     * @return a sorted list of {@link Suggestion} objects, or empty list if no candidates.
+     */
+    public List<Suggestion> getFriendSuggestions(int targetId) {
+        if (!userExists(targetId)) {
+            return Collections.emptyList();
+        }
+
+        Set<Integer> directFriends = getFriends(targetId);
+        if (directFriends.isEmpty()) {
+            return Collections.emptyList();
+        }
+
+        // Collect candidates (friends-of-friends)
+        Set<Integer> candidates = new HashSet<>();
+        for (int friendId : directFriends) {
+            Set<Integer> friendsOfFriend = getFriends(friendId);
+            for (int candidateId : friendsOfFriend) {
+                if (candidateId != targetId && !directFriends.contains(candidateId)) {
+                    candidates.add(candidateId);
+                }
+            }
+        }
+
+        List<Suggestion> suggestions = new ArrayList<>();
+        for (int candidateId : candidates) {
+            List<Integer> mutualFriends = getMutualFriends(targetId, candidateId);
+            suggestions.add(new Suggestion(candidateId, mutualFriends.size(), mutualFriends));
+        }
+
+        Collections.sort(suggestions);
+        return suggestions;
+    }
+
     // --------------------------------------------------------------- getters
 
     public Map<Integer, User> getUsers() {
@@ -316,6 +379,4 @@ public class Graph {
     public Map<Integer, Set<Integer>> getAdjacencyList() {
         return Collections.unmodifiableMap(adjacencyList);
     }
-
-    // TODO(chunk-9): friend suggestions
 }
