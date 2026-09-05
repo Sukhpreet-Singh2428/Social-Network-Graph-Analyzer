@@ -1,5 +1,6 @@
 package com.snga.service;
 
+import com.snga.dto.CommunityResponse;
 import com.snga.dto.EdgeDto;
 import com.snga.dto.GraphResponse;
 import com.snga.dto.NodeDto;
@@ -10,6 +11,7 @@ import com.snga.model.User;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
 import java.util.Set;
@@ -166,5 +168,23 @@ public class GraphService {
         return new PathResponse(source, target, path, distance);
     }
 
-    // TODO(chunk-7): DFS, connected components
+    /**
+     * Discovers all connected components and returns them with
+     * member lists, sizes, and internal edge counts.
+     */
+    public CommunityResponse getCommunities() {
+        List<List<Integer>> components = graph.getConnectedComponents();
+        List<CommunityResponse.Community> communities = new ArrayList<>();
+
+        int ordinal = 1;
+        for (List<Integer> component : components) {
+            int edgeCount = graph.countInternalEdges(component);
+            communities.add(new CommunityResponse.Community(
+                    ordinal++, component, component.size(), edgeCount));
+        }
+
+        return new CommunityResponse(communities);
+    }
+
+    // TODO(chunk-8): mutual friends, friend suggestions
 }

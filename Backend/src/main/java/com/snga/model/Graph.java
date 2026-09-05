@@ -212,6 +212,75 @@ public class Graph {
         return path;
     }
 
+    /**
+     * Discovers all connected components in the graph using BFS.
+     * <p>
+     * Complexity: O(V + E) — each node and edge is visited exactly once
+     * across all BFS traversals. Disconnected users (zero friends) each
+     * become their own component of size 1.
+     *
+     * @return a list of components, where each component is a list of the
+     *         user IDs that belong to it.
+     */
+    public List<List<Integer>> getConnectedComponents() {
+        List<List<Integer>> components = new ArrayList<>();
+        Set<Integer> visited = new HashSet<>();
+
+        for (int userId : users.keySet()) {
+            if (visited.contains(userId)) {
+                continue;
+            }
+
+            // BFS to discover the full component starting from userId
+            List<Integer> component = new ArrayList<>();
+            Queue<Integer> queue = new LinkedList<>();
+            queue.add(userId);
+            visited.add(userId);
+
+            while (!queue.isEmpty()) {
+                int current = queue.poll();
+                component.add(current);
+
+                Set<Integer> neighbors = adjacencyList.get(current);
+                if (neighbors != null) {
+                    for (int neighbor : neighbors) {
+                        if (!visited.contains(neighbor)) {
+                            visited.add(neighbor);
+                            queue.add(neighbor);
+                        }
+                    }
+                }
+            }
+
+            components.add(component);
+        }
+
+        return components;
+    }
+
+    /**
+     * Counts the number of internal (undirected) edges within a set of
+     * user IDs. Each edge is counted once.
+     * <p>
+     * Complexity: O(|members| * average degree) — iterates each member's
+     * neighbour set and counts edges where both endpoints are in the set.
+     */
+    public int countInternalEdges(List<Integer> memberIds) {
+        Set<Integer> memberSet = new HashSet<>(memberIds);
+        int count = 0;
+        for (int userId : memberIds) {
+            Set<Integer> neighbors = adjacencyList.get(userId);
+            if (neighbors != null) {
+                for (int neighbor : neighbors) {
+                    if (memberSet.contains(neighbor) && userId < neighbor) {
+                        count++;
+                    }
+                }
+            }
+        }
+        return count;
+    }
+
     // --------------------------------------------------------------- getters
 
     public Map<Integer, User> getUsers() {
@@ -222,5 +291,5 @@ public class Graph {
         return Collections.unmodifiableMap(adjacencyList);
     }
 
-    // TODO(chunk-7): DFS, connected components
+    // TODO(chunk-8): mutual friends, friend suggestions
 }
