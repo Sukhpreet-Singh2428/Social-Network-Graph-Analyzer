@@ -20,6 +20,24 @@ export interface FriendshipPayload {
   userId2: number;
 }
 
+export interface BackendPathResponse {
+  source: number;
+  target: number;
+  path: number[];
+  distance: number;
+}
+
+export interface BackendCommunity {
+  id: number;
+  members: number[];
+  size: number;
+  internalEdgeCount: number;
+}
+
+export interface BackendCommunityResponse {
+  communities: BackendCommunity[];
+}
+
 export const connectionApi = {
   getGraph: async (): Promise<BackendGraphResponse> => {
     return fetchClient<BackendGraphResponse>('/api/graph');
@@ -37,5 +55,13 @@ export const connectionApi = {
       method: 'DELETE',
       body: JSON.stringify({ userId1, userId2 }),
     });
+  },
+
+  getShortestPath: async (source: number, target: number): Promise<BackendPathResponse> => {
+    return fetchClient<BackendPathResponse>(`/api/graph/path?source=${source}&target=${target}`);
+  },
+
+  getCommunities: async (): Promise<BackendCommunityResponse> => {
+    return fetchClient<BackendCommunityResponse>('/api/graph/communities');
   },
 };

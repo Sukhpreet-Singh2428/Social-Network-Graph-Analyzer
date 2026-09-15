@@ -1,14 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import { useGraph } from '../context/GraphContext';
 import { useSearchParams, useNavigate } from 'react-router-dom';
-import { bfsShortestPath, bfsTraversal, dfsTraversal } from '../utils/graphAlgorithms';
+import { bfsTraversal, dfsTraversal } from '../utils/graphAlgorithms';
 import type { PathResult, BfsTraversalResult, DfsTraversalResult } from '../types';
 import { Route, ArrowRight, Zap, Network, ShieldAlert, Layers, GitBranch, Play } from 'lucide-react';
 
 type Mode = 'shortest_path' | 'bfs' | 'dfs';
 
 export const PathFinderPage: React.FC = () => {
-  const { users, connections, setHighlightedPath, setSelectedNodeId } = useGraph();
+  const { users, connections, findPath, setHighlightedPath, setSelectedNodeId } = useGraph();
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
 
@@ -38,10 +38,10 @@ export const PathFinderPage: React.FC = () => {
   const [bfsResult, setBfsResult] = useState<BfsTraversalResult | null>(null);
   const [dfsResult, setDfsResult] = useState<DfsTraversalResult | null>(null);
 
-  const handleCalculate = () => {
+  const handleCalculate = async () => {
     if (mode === 'shortest_path') {
       if (!sourceId || !targetId) return;
-      const res = bfsShortestPath(users, connections, sourceId, targetId);
+      const res = await findPath(sourceId, targetId);
       setShortestPathResult(res);
     } else if (mode === 'bfs') {
       if (!startId) return;

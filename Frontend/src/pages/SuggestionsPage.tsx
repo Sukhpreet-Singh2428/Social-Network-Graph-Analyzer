@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useGraph } from '../context/GraphContext';
-import { Sparkles, UserPlus, Network, HelpCircle, Users } from 'lucide-react';
-import { getSuggestions } from '../utils/graphAlgorithms';
+import { Sparkles, UserPlus, Network, HelpCircle, Users, Loader2 } from 'lucide-react';
+import { userApi } from '../api/userApi';
+import type { Suggestion, User } from '../types';
 import { useNavigate } from 'react-router-dom';
 
 export const SuggestionsPage: React.FC = () => {
@@ -9,6 +10,8 @@ export const SuggestionsPage: React.FC = () => {
   const navigate = useNavigate();
 
   const [selectedUserId, setSelectedUserId] = useState<string>('');
+  const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
+  const [loading, setLoading] = useState<boolean>(false);
 
   useEffect(() => {
     if (users.length > 0 && !selectedUserId) {
@@ -20,11 +23,77 @@ export const SuggestionsPage: React.FC = () => {
     return users.find(u => u.id === selectedUserId) || users[0] || null;
   }, [users, selectedUserId]);
 
-  // Real Graph-Based Suggestions Computation
-  const suggestions = useMemo(() => {
-    if (!activeUser) return [];
-    return getSuggestions(users, connections, activeUser.id);
-  }, [users, connections, activeUser]);
+  // Fetch real suggestions from backend endpoint GET /api/users/{id}/suggestions
+  useEffect(() => {
+    if (!activeUser) {
+      setSuggestions([]);
+      return;
+    }
+
+    let isMounted = true;
+    setLoading(true);
+
+    const numUserId = parseInt(activeUser.id, 10);
+    if (isNaN(numUserId)) {
+      setSuggestions([]);
+      setLoading(false);
+      return;
+    }
+
+    userApi.getSuggestions(numUserId)
+      .then(rawList => {
+        if (!isMounted) return;
+        const mapped: Suggestion[] = rawList.map(item => {
+          const uIdStr = String(item.userId);
+          const candUser: User = users.find(u => u.id === uIdStr) || {
+            id: uIdStr,
+            name: item.name,
+            username: `@${item.name.toLowerCase().replace(/[^a-z0-9]/g, '')}_${item.userId}`,
+            email: `${item.name.toLowerCase().replace(/[^a-z0-9]/g, '')}${item.userId}@network.io`,
+            avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=250',
+            role: 'Member',
+            communityId: 'c_1',
+            communityName: 'Cluster #1',
+            connectionCount: item.mutualFriendCount,
+            degreeCentrality: 0,
+            status: 'online',
+            joinedDate: '2025-01-15',
+            location: 'San Francisco, CA'
+          };
+
+          const mutualSampleNames = item.mutualFriends.map(mId => {
+            const mUser = users.find(u => u.id === String(mId));
+            return mUser ? mUser.name : `User ${mId}`;
+          });
+
+          const maxPossible = Math.max(1, activeUser.connectionCount);
+          const confidenceScore = Math.min(99, Math.round((item.mutualFriendCount / maxPossible) * 100));
+
+          return {
+            id: `sugg_${activeUser.id}_${item.userId}`,
+            user: candUser,
+            mutualConnectionCount: item.mutualFriendCount,
+            mutualConnectionsSample: mutualSampleNames,
+            sharedCommunity: candUser.communityName,
+            totalConnectionCount: candUser.connectionCount,
+            reason: `${item.mutualFriendCount} mutual connection${item.mutualFriendCount > 1 ? 's' : ''} in network`,
+            confidenceScore
+          };
+        });
+
+        setSuggestions(mapped);
+      })
+      .catch(() => {
+        if (isMounted) setSuggestions([]);
+      })
+      .finally(() => {
+        if (isMounted) setLoading(false);
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, [activeUser, users, connections]);
 
   const handleConnect = async (targetUserId: string) => {
     if (!activeUser) return;
@@ -84,7 +153,12 @@ export const SuggestionsPage: React.FC = () => {
       </div>
 
       {/* Suggestion Cards Grid */}
-      {!activeUser ? (
+      {loading ? (
+        <div className="p-12 text-center rounded-xl bg-[#18181b] border border-white/10 text-zinc-400 text-xs flex items-center justify-center gap-2">
+          <Loader2 className="w-4 h-4 animate-spin text-zinc-100" />
+          <span>Fetching backend suggestions...</span>
+        </div>
+      ) : !activeUser ? (
         <div className="p-12 text-center rounded-xl bg-[#18181b] border border-white/10 text-zinc-400 text-xs">
           No users available to generate suggestions.
         </div>
@@ -121,7 +195,7 @@ export const SuggestionsPage: React.FC = () => {
                 </div>
 
                 <span className="px-2.5 py-1 text-xs font-mono font-bold bg-zinc-900 text-zinc-100 rounded border border-zinc-700">
-                  {sugg.confidenceScore}% Match
+                  {sugg.mutualConnectionCount} Mutuals ({sugg.confidenceScore}%)
                 </span>
               </div>
 

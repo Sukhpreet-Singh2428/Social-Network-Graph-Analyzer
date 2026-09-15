@@ -2,7 +2,6 @@ import React, { createContext, useContext, useState, useEffect, useCallback, use
 import type { User, Connection, Community, ToastMessage, PathResult } from '../types';
 import { userApi } from '../api/userApi';
 import { connectionApi } from '../api/connectionApi';
-import { bfsShortestPath, findConnectedComponents } from '../utils/graphAlgorithms';
 
 interface GraphContextType {
   users: User[];
@@ -34,7 +33,7 @@ interface GraphContextType {
   deleteConnection: (connectionId: string) => Promise<boolean>;
   getUserById: (id: string) => User | undefined;
   getMutualConnections: (user1Id: string, user2Id: string) => User[];
-  findPath: (sourceId: string, targetId: string) => PathResult;
+  findPath: (sourceId: string, targetId: string) => Promise<PathResult>;
 }
 
 const GraphContext = createContext<GraphContextType | undefined>(undefined);
@@ -94,7 +93,6 @@ function transformUser(
     email,
     avatar,
     role,
-    // Real connected component IDs assigned dynamically after component detection
     communityId: 'c_1',
     communityName: 'Cluster #1',
     connectionCount,
@@ -133,6 +131,7 @@ function transformEdge(edge: { source: number; target: number }, userMap: Map<st
 export const GraphProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [rawUsers, setRawUsers] = useState<User[]>([]);
   const [connections, setConnections] = useState<Connection[]>([]);
+  const [communities, setCommunities] = useState<Community[]>([]);
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [highlightedPath, setHighlightedPath] = useState<string[]>([]);
   const [searchTerm, setSearchTerm] = useState<string>('');
@@ -146,12 +145,7 @@ export const GraphProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const [usersError, setUsersError] = useState<string | null>(null);
   const [connectionsError, setConnectionsError] = useState<string | null>(null);
 
-  // Sprint 4 — Real Memoized Connected Components (Communities)
-  const communities = useMemo(() => {
-    return findConnectedComponents(rawUsers, connections);
-  }, [rawUsers, connections]);
-
-  // Sprint 4 — Enriched users with real connected component IDs and names
+  // Enriched users with backend-computed connected component IDs and names
   const users = useMemo(() => {
     const compMap = new Map<string, { id: string; name: string }>();
     communities.forEach(c => {
@@ -204,7 +198,10 @@ export const GraphProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     setConnectionsError(null);
 
     try {
-      const graphData = await connectionApi.getGraph();
+      const [graphData, commResponse] = await Promise.all([
+        connectionApi.getGraph(),
+        connectionApi.getCommunities()
+      ]);
 
       const connectionCountMap = new Map<number, number>();
       graphData.nodes.forEach(node => connectionCountMap.set(node.id, 0));
@@ -222,8 +219,33 @@ export const GraphProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
       const transformedConnections = graphData.edges.map(edge => transformEdge(edge, userMap));
 
+      const MONOCHROME_PALETTE = ['#ffffff', '#e4e4e7', '#a1a1aa', '#71717a', '#52525b', '#3f3f46'];
+      const transformedCommunities: Community[] = commResponse.communities.map((c, idx) => {
+        const memberIds = c.members.map(String);
+        const compUsers = transformedUsers.filter(u => memberIds.includes(u.id));
+        const topUser = [...compUsers].sort((a, b) => b.connectionCount - a.connectionCount)[0];
+        const mostConnectedMember = topUser ? topUser.name : 'N/A';
+        const density = c.size > 1 ? parseFloat(((2 * c.internalEdgeCount) / (c.size * (c.size - 1))).toFixed(3)) : 0;
+
+        return {
+          id: `c_${c.id}`,
+          name: c.size === 1 ? `Isolated Cluster #${c.id}` : `Cluster #${c.id}`,
+          color: MONOCHROME_PALETTE[idx % MONOCHROME_PALETTE.length],
+          bgGlow: 'rgba(255, 255, 255, 0.08)',
+          memberCount: c.size,
+          connectionCount: c.internalEdgeCount,
+          density,
+          mostConnectedMember,
+          description: c.size === 1
+            ? `Single isolated user node.`
+            : `Connected component of ${c.size} user nodes with ${c.internalEdgeCount} internal friendship edges.`,
+          memberIds
+        };
+      });
+
       setRawUsers(transformedUsers);
       setConnections(transformedConnections);
+      setCommunities(transformedCommunities);
 
       if (transformedUsers.length > 0) {
         setSelectedNodeId(prev => (prev && userMap.has(prev) ? prev : transformedUsers[0].id));
@@ -376,8 +398,52 @@ export const GraphProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     return users.filter(u => mutualIds.includes(u.id));
   };
 
-  const findPath = (sourceId: string, targetId: string): PathResult => {
-    return bfsShortestPath(users, connections, sourceId, targetId);
+  const findPath = async (sourceId: string, targetId: string): Promise<PathResult> => {
+    const numSource = parseInt(sourceId, 10);
+    const numTarget = parseInt(targetId, 10);
+    const srcUser = getUserById(sourceId);
+    const tgtUser = getUserById(targetId);
+
+    const defaultSource = srcUser || ({ id: sourceId, name: `User ${sourceId}` } as User);
+    const defaultTarget = tgtUser || ({ id: targetId, name: `User ${targetId}` } as User);
+
+    if (isNaN(numSource) || isNaN(numTarget)) {
+      return {
+        sourceUser: defaultSource,
+        targetUser: defaultTarget,
+        path: [],
+        pathLength: 0,
+        degreesOfSeparation: 0,
+        found: false
+      };
+    }
+
+    try {
+      const res = await connectionApi.getShortestPath(numSource, numTarget);
+      const found = res.distance !== -1;
+      const pathLength = found ? res.distance : 0;
+      const fullPath = res.path
+        .map(id => getUserById(String(id)))
+        .filter((u): u is User => Boolean(u));
+
+      return {
+        sourceUser: defaultSource,
+        targetUser: defaultTarget,
+        path: fullPath,
+        pathLength,
+        degreesOfSeparation: pathLength,
+        found
+      };
+    } catch {
+      return {
+        sourceUser: defaultSource,
+        targetUser: defaultTarget,
+        path: [],
+        pathLength: 0,
+        degreesOfSeparation: 0,
+        found: false
+      };
+    }
   };
 
   return (
