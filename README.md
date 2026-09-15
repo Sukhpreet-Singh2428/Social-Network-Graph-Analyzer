@@ -143,7 +143,7 @@ Social-Network-Graph-Analyzer/
 ## Contributors
 
 - **Sukhpreet Singh** — Backend architecture, graph algorithms, REST API, deployment ([GitHub](https://github.com/Sukhpreet-Singh2428))
-- **[Teammate's name]** — Frontend architecture, network visualization, UI/UX
+- **Prince Mathur** — Frontend architecture, network visualization, UI/UX
 
 ## License
 
